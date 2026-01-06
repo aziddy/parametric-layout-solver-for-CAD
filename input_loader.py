@@ -57,9 +57,6 @@ class InputLoader:
             
         # 3. Validate Constraints (Optional)
         if "additionalConstraints" in data:
-            constraints = data["additionalConstraints"]
-            # Check known keys if strict, or just let them pass.
-            # We look for padding.
             pass
 
     @staticmethod
@@ -97,9 +94,48 @@ class InputLoader:
     @staticmethod
     def extract_output_format(data):
         """
-        Extracts the preferred output format.
-        Returns 'CLI' (default) or 'GUI'.
+        Legacy: Extracts the preferred output format (CLI only).
         """
         if "resultOutput" in data:
             return data["resultOutput"].get("outputFormat", "CLI")
         return "CLI"
+        
+    @staticmethod
+    def extract_output_config(data):
+        """
+        Extracts output configuration.
+        
+        Returns:
+            config: Dictionary with keys:
+                - show_output (bool): Whether to display GUI.
+                - output_format (str or None): "DXF", "PNG", or None.
+        """
+        config = {
+            "show_output": False,
+            "output_format": None
+        }
+        
+        if "resultOutput" in data:
+            ro = data["resultOutput"]
+            config["show_output"] = ro.get("showOutput", False)
+            fmt = ro.get("outputFormat", None)
+            if fmt and isinstance(fmt, str):
+                config["output_format"] = fmt.upper()
+                
+        return config
+
+    @staticmethod
+    def extract_target_radius(data):
+        """
+        Extracts the target radius from the outerShape configuration, if present.
+        
+        Returns:
+            radius (float or None): The target radius.
+        """
+        if "outerShape" in data:
+            outer = data["outerShape"]
+            if "radius" in outer:
+                return float(outer["radius"])
+            elif "diameter" in outer:
+                return float(outer["diameter"]) / 2.0
+        return None

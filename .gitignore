@@ -209,3 +209,6 @@ __marimo__/
 # JSON Files
 *.json
 !input/exampleInput.json
+
+# Output Files
+*.dxf

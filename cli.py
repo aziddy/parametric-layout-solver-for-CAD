@@ -1,10 +1,10 @@
 import argparse
 import sys
-from solver import rect_circle_packing_solver
+from solver import solve_multistage
 from input_loader import InputLoader
 
 def main():
-    parser = argparse.ArgumentParser(description="Pack 4 rectangles into a minimal circle.")
+    parser = argparse.ArgumentParser(description="Pack rectangles into a minimal circle with rotation support.")
     
     # Mutually exclusive group: either direct arguments or JSON file
     group = parser.add_mutually_exclusive_group(required=True)
@@ -20,6 +20,11 @@ def main():
     padding_inner = 0.0
     padding_outer = 0.0
     
+    # Context specific defaults
+    show_output = False
+    output_format = None
+    target_radius = None
+    
     if args.json:
         try:
             data = InputLoader.load_json(args.json)
@@ -32,8 +37,15 @@ def main():
             padding_inner = constraints["padding_inner"]
             padding_outer = constraints["padding_outer"]
             
+            # Extract config
+            config = InputLoader.extract_output_config(data)
+            show_output = config["show_output"]
+            output_format = config["output_format"]
+            
+            # Extract target radius
+            target_radius = InputLoader.extract_target_radius(data)
+            
             print(f"Loaded from JSON: {len(rectangles)} rectangles.")
-            print(f"Padding: Inner={padding_inner}, Outer={padding_outer}")
             
         except Exception as e:
             print(f"Error loading JSON: {e}")
@@ -54,38 +66,57 @@ def main():
             print("Error: Rectangles must be in format Width,Height using numbers.")
             sys.exit(1)
             
+        # Defaults for CLI mode
+        show_output = False 
+        output_format = None
+        target_radius = None
+            
     if len(rectangles) != 4:
-        print(f"Warning: Expected 4 rectangles, but got {len(rectangles)}. Solver is optimized for 4 but will try.")
-
-    print(f"Packing Rectangles: {rectangles}")
-    result = rect_circle_packing_solver(rectangles, padding_inner, padding_outer)
+        print(f"Warning: Expected 4 rectangles, but got {len(rectangles)}. Solver will proceed.")
+ 
+    print(f"Packing {len(rectangles)} Rectangles: {rectangles}")
     
-    if result['success']:
+    # Call the multistage solver
+    result = solve_multistage(rectangles, padding_inner, padding_outer)
+    
+    if result and result['success']:
         print(f"\nOptimization Successful!")
         print(f"Minimum Circle Radius: {result['radius']:.4f}")
-        print("\nPositions (Center x, y):")
-        for i, pos in enumerate(result['positions']):
+        print("\nPositions:")
+        for i, pos_data in enumerate(result['positions']):
             ident = identifiers[i] if i < len(identifiers) else f"Rect {i+1}"
-            print(f"  {ident}: ({pos[0]:.4f}, {pos[1]:.4f})")
+            x = pos_data['x']
+            y = pos_data['y']
+            rot = pos_data.get('rotation', 0.0)
+            print(f"  {ident}: Center({x:.4f}, {y:.4f}), Rotation: {rot:.2f}°")
             
-        # Check output format
-        output_format = "CLI"
-        if args.json:
+        # Handle Output
+        if output_format:
+            print(f"Exporting result as {output_format}...")
             try:
-                # Reload minimal data to get metadata or stick to what we have
-                data = InputLoader.load_json(args.json)
-                output_format = InputLoader.extract_output_format(data)
-            except:
-                pass
-        
-        if output_format == "GUI":
+                from file_exporter import export_result
+                filename = "output" 
+                # If json input, maybe use that base name? sticking to 'output' for now as simpler
+                export_result(rectangles, result, padding_inner, padding_outer, output_format, filename, identifiers)
+            except ImportError:
+                 print("Error importing file_exporter. Check dependencies.")
+            except Exception as e:
+                print(f"Export error: {e}")
+                
+        if show_output:
             print("\nOpening result visualization window...")
-            from visualizer import plot_packing_result
-            plot_packing_result(rectangles, result, padding_inner, padding_outer, identifiers)
+            try:
+                from visualizer import plot_packing_result
+                plot_packing_result(rectangles, result, padding_inner, padding_outer, identifiers, target_radius=target_radius)
+            except ImportError:
+                print("Visualization module not available or failed to import.")
+            except Exception as e:
+                print(f"Visualization error: {e}")
             
     else:
-        print("\nOptimization Failed.")
-        print(f"Message: {result.get('message', 'Unknown error')}")
+        print("\nOptimization Failed or no valid solution found.")
+        if result:
+            print(f"Message: {result.get('message', 'Unknown error')}")
 
 if __name__ == "__main__":
     main()
