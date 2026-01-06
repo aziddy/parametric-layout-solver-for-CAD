@@ -22,17 +22,25 @@ def plot_packing_result(rectangles, result, padding_inner=0.0, padding_outer=0.0
     fig, ax = plt.subplots(figsize=(8, 8))
     
     # Draw physical outer circle (Result)
-    circle = Circle((0, 0), R, fill=False, color='blue', linestyle='--', linewidth=2, label=f'Result R={R:.2f}')
+    circle = Circle((0, 0), R, fill=False, color='blue', linestyle='--', linewidth=2)
     ax.add_patch(circle)
     
     # Draw Target Circle if provided
     if target_radius is not None:
          target_c = Circle((0, 0), target_radius, fill=False, color='green', linestyle='-', linewidth=2, label=f'Target R={target_radius:.2f} (D={target_radius*2:.1f})')
          ax.add_patch(target_c)
-    
+         
+         # Target Inner Constraint (Target - Padding)
+         if padding_outer > 0:
+             t_inner = target_radius - padding_outer
+             if t_inner > 0:
+                target_eff_c = Circle((0, 0), t_inner, fill=False, color='red', linestyle='-.', linewidth=1.5, 
+                                      label=f'Target Limit R={t_inner:.2f} (D={t_inner*2:.1f})')
+                ax.add_patch(target_eff_c)
+
     # Optional: Draw the effective containment boundary
     if padding_outer > 0:
-        eff_circle = Circle((0, 0), R - padding_outer, fill=False, color='gray', linestyle=':', alpha=0.5, label='Constraint Boundary')
+        eff_circle = Circle((0, 0), R - padding_outer, fill=False, color='gray', linestyle=':', alpha=0.5, label='Actual Constraint Boundary')
         ax.add_patch(eff_circle)
     
     colors = ['#FF9999', '#99FF99', '#9999FF', '#FFCC99', '#FF99CC', '#99CCFF']

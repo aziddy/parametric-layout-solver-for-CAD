@@ -1,6 +1,16 @@
 import numpy as np
 from scipy.optimize import differential_evolution
 import itertools
+import sys
+
+def make_progress_callback(max_iter):
+    iteration = 0
+    def callback(xk, convergence=None):
+        nonlocal iteration
+        iteration += 1
+        sys.stdout.write(f"\rIteration {iteration}/{max_iter}")
+        sys.stdout.flush()
+    return callback
 
 def get_corners(cx, cy, w, h, theta):
     """
@@ -88,7 +98,7 @@ def get_sat_overlap(corners1, corners2, padding=0.0):
     # Return squared penetration
     return min_penetration**2 if min_penetration != float('inf') else 0.0
 
-def rect_circle_packing_solver(rectangles, padding_inner=0.0, padding_outer=0.0, rotation_mode='FIXED_0'):
+def rect_circle_packing_solver(rectangles, padding_inner=0.0, padding_outer=0.0, rotation_mode='FIXED_0', target_radius=None):
     """
     Solves for the minimum radius circle that contains rectangles without overlap.
     
@@ -97,6 +107,7 @@ def rect_circle_packing_solver(rectangles, padding_inner=0.0, padding_outer=0.0,
         padding_inner: Minimum distance between rectangles.
         padding_outer: Minimum distance between rectangles and the circle boundary.
         rotation_mode: 'FIXED_0', 'DISCRETE_90', 'DISCRETE_45', 'FREE'
+        target_radius: Optional target radius for strict checking.
         
     Returns:
         result: Dictionary containing radius, positions, success status.
@@ -105,22 +116,24 @@ def rect_circle_packing_solver(rectangles, padding_inner=0.0, padding_outer=0.0,
     
     res = {}
     if rotation_mode == 'FREE':
-        res = _solve_free(rectangles, padding_inner, padding_outer)
+        res = _solve_free(rectangles, padding_inner, padding_outer, target_radius=target_radius)
     elif rotation_mode == 'FIXED_0':
         angles = [0.0] * len(rectangles)
         # Use more robustness for the first mode as requested
-        res = _solve_fixed_angles(rectangles, angles, padding_inner, padding_outer, robust=True)
+        res = _solve_fixed_angles(rectangles, angles, padding_inner, padding_outer, robust=True, target_radius=target_radius)
     elif rotation_mode == 'DISCRETE_90':
-        res = _solve_discrete_permutations(rectangles, [0, 90], padding_inner, padding_outer)
+        res = _solve_discrete_permutations(rectangles, [0, 90], padding_inner, padding_outer, target_radius=target_radius)
     elif rotation_mode == 'DISCRETE_45':
         # 0, 45, 90, and 135 (which is -45 for a rectangle)
-        res = _solve_discrete_permutations(rectangles, [0, 45, 90, 135], padding_inner, padding_outer)
+        res = _solve_discrete_permutations(rectangles, [0, 45, 90, 135], padding_inner, padding_outer, target_radius=target_radius)
     else:
         raise ValueError(f"Unknown rotation mode: {rotation_mode}")
-        
+    
+    # Ensure new line after progress bar
+    print()
     return res
 
-def _solve_discrete_permutations(rectangles, allowed_degrees, padding_inner, padding_outer):
+def _solve_discrete_permutations(rectangles, allowed_degrees, padding_inner, padding_outer, target_radius=None):
     n = len(rectangles)
     
     # Generate all combinations of angles
@@ -134,7 +147,7 @@ def _solve_discrete_permutations(rectangles, allowed_degrees, padding_inner, pad
     # print(f"DEBUG: Testing {len(permutations)} permutations for {allowed_degrees}...")
     
     for angles in permutations:
-        res = _solve_fixed_angles(rectangles, angles, padding_inner, padding_outer, robust=False)
+        res = _solve_fixed_angles(rectangles, angles, padding_inner, padding_outer, robust=False, target_radius=target_radius)
         if res.get('valid') and res['radius'] < best_radius:
             best_radius = res['radius']
             best_result = res
@@ -148,7 +161,7 @@ def _solve_discrete_permutations(rectangles, allowed_degrees, padding_inner, pad
         
     return best_result
 
-def _solve_fixed_angles(rectangles, angles, padding_inner, padding_outer, robust=False):
+def _solve_fixed_angles(rectangles, angles, padding_inner, padding_outer, robust=False, target_radius=None):
     n_rects = len(rectangles)
     width_heights = np.array(rectangles) 
     
@@ -186,18 +199,48 @@ def _solve_fixed_angles(rectangles, angles, padding_inner, padding_outer, robust
                     
         return R + penalty
 
+    
     # Config based on robustness
     maxiter = 2000 if robust else 600
     popsize = 20 if robust else 10
     
+    if target_radius is not None:
+        # If target provided, use tol=0 to disable standard convergence
+        # Use callback to stop ONLY if valid and within target
+        tol = 0
+    else:
+        tol = 0.01
+
+    iteration = 0
+    def callback_wrapper(xk, convergence=None):
+        nonlocal iteration
+        iteration += 1
+        sys.stdout.write(f"\rIteration {iteration}/{maxiter}")
+        sys.stdout.flush()
+        
+        if target_radius is not None:
+            # Check validity
+            R = xk[0]
+            if R > target_radius:
+                return False # Keep going
+            
+            # Check physical validity (overlap)
+            val = objective(xk)
+            penalty = val - R
+            if penalty < 1e-4:
+                return True # Stop! Valid and Fits Target
+                
+        return False
+
     result = differential_evolution(
         objective, 
         bounds, 
         strategy='best1bin', 
         maxiter=maxiter, 
         popsize=popsize, 
-        tol=0.01, 
-        seed=None
+        tol=tol, 
+        seed=None,
+        callback=callback_wrapper
     )
 
     best_vars = result.x
@@ -224,7 +267,7 @@ def _solve_fixed_angles(rectangles, angles, padding_inner, padding_outer, robust
         'message': result.message
     }
 
-def _solve_free(rectangles, padding_inner, padding_outer):
+def _solve_free(rectangles, padding_inner, padding_outer, target_radius=None):
     n_rects = len(rectangles)
     width_heights = np.array(rectangles)
     
@@ -266,15 +309,37 @@ def _solve_free(rectangles, padding_inner, padding_outer):
                     penalty += overlap * 10000
                     
         return R + penalty
+    
+    maxiter = 1000
+    
+    if target_radius is not None:
+        tol = 0
+    else:
+        tol = 0.05
         
+    iteration = 0
+    def callback_wrapper(xk, convergence=None):
+        nonlocal iteration
+        iteration += 1
+        sys.stdout.write(f"\rIteration {iteration}/{maxiter}")
+        sys.stdout.flush()
+        
+        if target_radius is not None:
+            R = xk[0]
+            if R > target_radius: return False
+            val = objective(xk)
+            if val - R < 1e-4: return True
+        return False
+    
     result = differential_evolution(
         objective, 
         bounds, 
         strategy='best1bin', 
-        maxiter=1000,
+        maxiter=maxiter,
         popsize=15, 
-        tol=0.05,
-        seed=None
+        tol=tol,
+        seed=None,
+        callback=callback_wrapper
     )
     
     best_vars = result.x
@@ -301,11 +366,14 @@ def _solve_free(rectangles, padding_inner, padding_outer):
         'message': result.message
     }
 
-def solve_multistage(rectangles, padding_inner=0.0, padding_outer=0.0):
+def solve_multistage(rectangles, padding_inner=0.0, padding_outer=0.0, target_radius=None):
     """
     Runs various modes sequentially.
     Stops early if a VALID solution is found.
     Optimization robustness is higher for earlier modes.
+    
+    Args:
+        target_radius: Optional float. If provided, early stopping only occurs if radius <= target_radius.
     """
     # Order: FIXED_0 -> DISCRETE_90 -> DISCRETE_45 -> FREE
     modes = ['FIXED_0', 'DISCRETE_90', 'DISCRETE_45', 'FREE']
@@ -317,18 +385,48 @@ def solve_multistage(rectangles, padding_inner=0.0, padding_outer=0.0):
     for mode in modes:
         print(f"--- Running Mode: {mode} ---")
         try:
-            res = rect_circle_packing_solver(rectangles, padding_inner, padding_outer, rotation_mode=mode)
-            is_valid = res.get('valid', False)
-            print(f"  > Radius: {res['radius']:.4f}, Valid: {is_valid}")
+            res = rect_circle_packing_solver(rectangles, padding_inner, padding_outer, rotation_mode=mode, target_radius=target_radius)
+            is_no_overlap = res.get('valid', False)
+            print(f"  > Radius: {res['radius']:.4f}, No Overlap: {is_no_overlap}")
             
-            if is_valid:
-                print(f"  > VALID Solution found in {mode}. Stopping early as requested.")
+            # Check if fits target (if target is provided)
+            fits_target = True
+            if target_radius is not None:
+                fits_target = res['radius'] <= target_radius + 1e-4
+
+            if is_no_overlap and fits_target:
+                print(f"  > VALID Solution found in {mode} (Fits Target). Stopping early.")
                 return res
+            elif is_no_overlap and not fits_target:
+                 print(f"  > Solution Radius {res['radius']:.4f} > Target {target_radius:.4f}. Continuing search...")
             
-            # Keep track of best attempt (even if technically invalid, finding "least bad")
-            if best_res is None or res['radius'] < best_res['radius']:
+            # Keep track of best attempt
+            if best_res is None:
                 best_res = res
                 best_mode = mode
+            else:
+                # Prioritize Validity (No Overlap AND Fits Target)
+                # If neither fits target, prioritize No Overlap
+                # If both No Overlap, prioritize smallest radius
+                
+                current_fits = is_no_overlap and fits_target
+                best_fits = best_res.get('valid', False) and (best_res['radius'] <= target_radius + 1e-4 if target_radius else True)
+                
+                if current_fits and not best_fits:
+                    best_res = res
+                    best_mode = mode
+                elif current_fits == best_fits:
+                     # Tie-breaker: Check Overlap status if strictly required (though current_fits implies overlap=False)
+                     current_no_overlap = is_no_overlap
+                     best_no_overlap = best_res.get('valid', False)
+                     
+                     if current_no_overlap and not best_no_overlap:
+                         best_res = res
+                         best_mode = mode
+                     elif current_no_overlap == best_no_overlap:
+                         if res['radius'] < best_res['radius']:
+                             best_res = res
+                             best_mode = mode
                 
         except Exception as e:
             print(f"  > Mode {mode} failed with error: {e}")

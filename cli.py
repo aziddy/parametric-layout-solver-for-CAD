@@ -77,10 +77,19 @@ def main():
     print(f"Packing {len(rectangles)} Rectangles: {rectangles}")
     
     # Call the multistage solver
-    result = solve_multistage(rectangles, padding_inner, padding_outer)
+    result = solve_multistage(rectangles, padding_inner, padding_outer, target_radius=target_radius)
     
-    if result and result['success']:
-        print(f"\nOptimization Successful!")
+    if result and result.get('valid', False):
+        # Strict Validation against Target
+        fits_target = True
+        if target_radius is not None and result['radius'] > target_radius + 1e-4:
+            fits_target = False
+            
+        if fits_target:
+            print(f"\nOptimization Successful!")
+        else:
+             print(f"\nOptimization Failed: Result exceeds Target Radius.")
+             
         print(f"Minimum Circle Radius: {result['radius']:.4f}")
         print("\nPositions:")
         for i, pos_data in enumerate(result['positions']):
@@ -89,6 +98,23 @@ def main():
             y = pos_data['y']
             rot = pos_data.get('rotation', 0.0)
             print(f"  {ident}: Center({x:.4f}, {y:.4f}), Rotation: {rot:.2f}°")
+            
+        # Validation
+        if target_radius is not None:
+            print("\n--- Validation ---")
+            print(f"Target Radius: {target_radius:.4f} (Diameter: {target_radius*2:.4f})")
+            print(f"Result Radius: {result['radius']:.4f} (Diameter: {result['radius']*2:.4f})")
+            
+            # Check fit
+            # Solver returns R which includes the padding offset (constraints are valid if Rects are within R - padding_outer)
+            # So we just compare Result R vs Target R
+            if result['radius'] <= target_radius + 1e-4: # Tolerance
+                print("STATUS: FITS")
+            else:
+                diff = result['radius'] - target_radius
+                print(f"STATUS: DOES NOT FIT (Exceeds by Radius: {diff:.4f}, Diameter: {diff*2:.4f})")
+                print(f"NOTE: Inner shapes need to fit within Diameter {target_radius*2 - padding_outer*2:.4f} (Target - 2*Padding)")
+
             
         # Handle Output
         if output_format:
