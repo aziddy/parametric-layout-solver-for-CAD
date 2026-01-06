@@ -29,7 +29,7 @@
     {
       "identifier": "AppleTvRemote",
       "shape": "rectangle",
-      "width": 39,
+      "width": 36.85,
       "height": 10.85,
       "units": "millimetres"
     }
