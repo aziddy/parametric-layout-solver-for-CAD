@@ -3,12 +3,24 @@ from scipy.optimize import differential_evolution
 import itertools
 import sys
 
-def make_progress_callback(max_iter):
-    iteration = 0
+class ProgressTracker:
+    def __init__(self, total_iterations=None):
+        self.current_iteration = 0
+        self.total_iterations = total_iterations
+
+    def increment(self):
+        self.current_iteration += 1
+
+    def get_progress_string(self):
+        if self.total_iterations:
+             return f"Iteration {self.current_iteration}/{self.total_iterations}"
+        else:
+             return f"Iteration {self.current_iteration}"
+
+def make_progress_callback(tracker):
     def callback(xk, convergence=None):
-        nonlocal iteration
-        iteration += 1
-        sys.stdout.write(f"\rIteration {iteration}/{max_iter}")
+        tracker.increment()
+        sys.stdout.write(f"\r{tracker.get_progress_string()}")
         sys.stdout.flush()
     return callback
 
@@ -146,8 +158,15 @@ def _solve_discrete_permutations(rectangles, allowed_degrees, padding_inner, pad
     
     # print(f"DEBUG: Testing {len(permutations)} permutations for {allowed_degrees}...")
     
+    
+    total_permutations = len(permutations)
+    maxiter_per_run = 600 # default for non-robust
+    total_max_iter = total_permutations * maxiter_per_run
+    
+    tracker = ProgressTracker(total_iterations=total_max_iter)
+    
     for angles in permutations:
-        res = _solve_fixed_angles(rectangles, angles, padding_inner, padding_outer, robust=False, target_radius=target_radius)
+        res = _solve_fixed_angles(rectangles, angles, padding_inner, padding_outer, robust=False, target_radius=target_radius, progress_tracker=tracker)
         if res.get('valid') and res['radius'] < best_radius:
             best_radius = res['radius']
             best_result = res
@@ -161,7 +180,7 @@ def _solve_discrete_permutations(rectangles, allowed_degrees, padding_inner, pad
         
     return best_result
 
-def _solve_fixed_angles(rectangles, angles, padding_inner, padding_outer, robust=False, target_radius=None):
+def _solve_fixed_angles(rectangles, angles, padding_inner, padding_outer, robust=False, target_radius=None, progress_tracker=None):
     n_rects = len(rectangles)
     width_heights = np.array(rectangles) 
     
@@ -211,11 +230,12 @@ def _solve_fixed_angles(rectangles, angles, padding_inner, padding_outer, robust
     else:
         tol = 0.01
 
-    iteration = 0
+    if progress_tracker is None:
+        progress_tracker = ProgressTracker(total_iterations=maxiter)
+
     def callback_wrapper(xk, convergence=None):
-        nonlocal iteration
-        iteration += 1
-        sys.stdout.write(f"\rIteration {iteration}/{maxiter}")
+        progress_tracker.increment()
+        sys.stdout.write(f"\r{progress_tracker.get_progress_string()}")
         sys.stdout.flush()
         
         if target_radius is not None:
@@ -316,12 +336,13 @@ def _solve_free(rectangles, padding_inner, padding_outer, target_radius=None):
         tol = 0
     else:
         tol = 0.05
+    
+    # Single run mode, so local tracker is fine if not passed (though _solve_free usually not called in loop)
+    tracker = ProgressTracker(total_iterations=maxiter)
         
-    iteration = 0
     def callback_wrapper(xk, convergence=None):
-        nonlocal iteration
-        iteration += 1
-        sys.stdout.write(f"\rIteration {iteration}/{maxiter}")
+        tracker.increment()
+        sys.stdout.write(f"\r{tracker.get_progress_string()}")
         sys.stdout.flush()
         
         if target_radius is not None:
