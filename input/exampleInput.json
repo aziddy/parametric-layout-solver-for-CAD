@@ -1,0 +1,50 @@
+{
+  "outerShape": {
+    "shape": "circle",
+    "diameter": 74.4,
+    "units": "millimetres"
+  },
+  "innerShape": [
+    {
+      "identifier": "LightRemote",
+      "shape": "rectangle",
+      "width": 38.1,
+      "height": 17.35,
+      "units": "millimetres"
+    },
+    {
+      "identifier": "HDMIMuxRemote",
+      "shape": "rectangle",
+      "width": 53.85,
+      "height": 14.84,
+      "units": "millimetres"
+    },
+    {
+      "identifier": "BoseAudioRemote",
+      "shape": "rectangle",
+      "width": 42.1,
+      "height": 14.1,
+      "units": "millimetres"
+    },
+    {
+      "identifier": "AppleTvRemote",
+      "shape": "rectangle",
+      "width": 36.85,
+      "height": 10.85,
+      "units": "millimetres"
+    }
+  ],
+  "additionalConstraints": {
+    "paddingBetweenInnerShapes": {
+      "amount": 1,
+      "units": "millimetres"
+    },
+    "paddingBetweenInnerShapesAndOuter": {
+      "amount": 1,
+      "units": "millimetres"
+    }
+  },
+  "resultOutput": {
+    "outputFormat": "GUI"
+  }
+}
